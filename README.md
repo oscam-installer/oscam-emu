@@ -50,7 +50,7 @@ Building OSCam from source
  - Get the lastest sources from SVN
     git clone https://git.streamboard.tv/common/oscam.git oscam
 
- - Go to oscam-trunk directory.
+ - Go to oscam-git directory.
 
  - Run `make config` to choose the features you want.
 
