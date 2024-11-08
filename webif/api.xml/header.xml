@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<oscam version="##CS_VERSION##" revision="" commit="##CS_GIT_COMMIT##" starttime="##APISTARTTIME##" uptime="##APIRUNTIME##" readonly="##APIREADONLY##">
