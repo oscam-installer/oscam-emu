@@ -257,7 +257,7 @@
       PATH="$HOME/bin:$PATH"
       [ ! -d build/${ARCH} ] && mkdir -p build/${ARCH}
       ./config.sh --enable all --disable $DISABLE_OPT |& tee build/${ARCH}/oscam-make-${ARCH}${BIN_EXT}.log
-      [ "$ARCH" == "ancient" ] && ./config.sh --create-cert rsa 4096 ca "Test's OSCam Distribution" |& tee -a build/${ARCH}/oscam-make-${ARCH}${BIN_EXT}.log
+      [ "$ARCH" == "ancient" ] && ./config.sh --create-cert rsa 4096 ca "Test OSCam Distribution" |& tee -a build/${ARCH}/oscam-make-${ARCH}${BIN_EXT}.log
       make OSCAM_BIN=build/${ARCH}/oscam-make-${ARCH}${BIN_EXT} "EXTRA_CFLAGS=$CFLAGS" $MAKE_OPT |& tee -a build/${ARCH}/oscam-make-${ARCH}${BIN_EXT}.log
       rm -f build/${ARCH}/oscam-make-${ARCH}${BIN_EXT}.debug 2>/dev/null
     - | #cmake build
