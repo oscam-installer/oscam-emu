@@ -1,0 +1,407 @@
+.helper:
+  #terminal colors
+  terminal-color:
+    - | #define terminal color variables
+      echo
+      TC_FNT_DEFAULT='\e[0m'
+      TC_FNT_BLACK='\e[30m'
+      TC_FNT_RED='\e[31m'
+      TC_FNT_GREEN='\e[32m'
+      TC_FNT_YELLOW='\e[33m'
+      TC_FNT_BLUE='\e[34m'
+      TC_FNT_MAGENTA='\e[35m'
+      TC_FNT_CYAN='\e[36m'
+      TC_FNT_GRAY='\e[37m'
+
+  #get some system information
+  runner-info:
+    - |
+      echo "Runner system information..."
+      echo "System: $(uname -a)"
+      echo "Host: $(cat /etc/hostname)"
+      echo "Version: $(cat /etc/issue)"
+      echo "User: $(whoami)"
+      echo "---------------------------------"
+      echo "SETUP_BUILD_ENV: $SETUP_BUILD_ENV"
+      echo "API_PROTOCOL: $API_PROTOCOL"
+      echo "CROSS_BUILD_ARCH: $CROSS_BUILD_ARCH"
+      echo "GIT_REF: $GIT_REF"
+
+  #setup build environment for oscam
+  runner-setup:
+    - | #install packages via package manager
+      echo "Installing build prerequisites..."
+      sudo apt -y update
+      sudo apt -y install build-essential automake libtool cmake libssl-dev curl jq
+
+    - | #get processor capabilities
+      echo "Installing libdvbcsa from source..."
+      FLAGS="$(cat /proc/cpuinfo | grep -im1 flags | awk -F':' '{print $2}')" || true
+      FLAGS+="$(cat /proc/cpuinfo | grep -im1 features | awk -F':' '{print $2}')" || true
+
+    - | #autodetect libdvbcsa optimization
+      echo "$FLAGS" | grep -qiw 'altivec' && optimization="--enable-altivec"
+      [ -z "$optimization" ] && echo "$FLAGS" | grep -qiw "avx2" && optimization="--enable-avx2"
+      [ -z "$optimization" ] && echo "$FLAGS" | grep -qiw "ssse3" && optimization="--enable-ssse3"
+      [ -z "$optimization" ] && echo "$FLAGS" | grep -qiw "sse2" && optimization="--enable-sse2"
+      [ -z "$optimization" ] && echo "$FLAGS" | grep -qiw "mmx" && optimization="--enable-mmx"
+      if [ -z "$optimization" ]; then
+        if [ -n "$(find "/usr/lib" -name "arm_neon.h" -type f -print -quit)" ]; then
+            echo "$FLAGS" | grep -qiw "neon\|simd\|asimd" && optimization="--enable-neon";
+        fi;
+      fi;
+      [ -z "$optimization" ] && optimization="--enable-uint32"
+      echo "libdvbcsa optimization autodetection: $optimization"
+
+    - | #gettings libdvbcsa patched sources
+      rm -rf ./libdvbcsa
+      git clone https://github.com/oe-mirrors/libdvbcsa.git ./libdvbcsa
+      cd ./libdvbcsa
+
+    - | #compile & install libdvbcsa
+      ./bootstrap && ./configure $optimization
+      (($?)) && exit 1;
+      make -j$(nproc) || exit 1;
+      sudo make install || exit 1;
+
+    - | #update library cache
+      sudo ldconfig
+      sudo ldconfig -v
+
+  #installs jq for pipeline user
+  jq-installer:
+    - |
+      if ! JQ_BIN="$(which jq)" && [ ! -f $HOME/bin/jq ]; then
+        echo "Downloading jq binary to '$HOME/bin/jq'...";
+        case $(uname -m) in
+          i386|i686)     HOST_ARCH="i386" ;;
+          aarch64|arm64) HOST_ARCH="arm64" ;;
+          *)             HOST_ARCH="amd64" ;;
+        esac;
+        curl --progress-bar -L --output $HOME/bin/jq https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$HOST_ARCH;
+        chmod +x $HOME/bin/jq;
+        JQ_BIN="$HOME/bin/jq";
+      else
+        JQ_BIN="$(which jq || printf $HOME/bin/jq)"
+      fi
+
+  #installs upx for pipeline user
+  upx-installer:
+    - !reference [.helper, jq-installer]
+
+    - |
+      if ! UPX_BIN="$(which upx)" && [ ! -f $HOME/bin/upx ]; then
+        echo "Downloading upx binary to '$HOME/bin/upx'...";
+        case $(uname -m) in
+          i386|i686)     HOST_ARCH="i386" ;;
+          aarch64|arm64) HOST_ARCH="arm64" ;;
+          arm*)          HOST_ARCH="arm" ;;
+          *)             HOST_ARCH="amd64" ;;
+        esac;
+        rm -rf "/tmp/upx_$HOST_ARCH.tar.xz" 2>/dev/null;
+        UPX_TAG="$(git ls-remote --sort=-version:refname https://github.com/upx/upx.git --tags v*.*.* | grep -v 'alpha\|beta\|\-pre\|\-rc\|\^' | awk -F'/' 'NR==1 {print $NF}')";
+        UPX_URL="$(curl --silent "https://api.github.com/repos/upx/upx/releases/tags/$UPX_TAG" | $JQ_BIN -r '.assets | .[] | select( (.name | contains("'$HOST_ARCH'")) and (.name | endswith(".tar.xz"))) | .browser_download_url' | sed -e 's#\"##g')";
+        curl --progress-bar -L --output "/tmp/upx_$HOST_ARCH.tar.xz" "$UPX_URL";
+        CURDIR=$(echo $PWD);
+        cd $HOME/bin;
+        tar -xvf "/tmp/upx_$HOST_ARCH.tar.xz" $(tar -tf "/tmp/upx_$HOST_ARCH.tar.xz" | grep 'upx$') --strip-components=1
+        chmod +x $HOME/bin/upx;
+        UPX_BIN="$HOME/bin/upx";
+        cd $CURDIR;
+      else
+        UPX_BIN="$(which upx || printf $HOME/bin/upx)"
+      fi
+
+  #installs download-secure-files for pipeline user
+  download-secure-files-installer:
+    - |
+      echo "Installing gitlab download-secure-files binary...";
+      CI_API_V4_URL="${API_PROTOCOL}:${CI_API_V4_URL#*:}"
+      curl --silent -L "https://gitlab.com/gitlab-org/incubation-engineering/mobile-devops/download-secure-files/-/raw/main/installer" | bash;
+
+  #checkout git repository parts (needs variables GIT_STRATEGY: none and e.g. GIT SPARSE_FILTER: .gitlab to be set in the calling job)
+  sparse-checkout:
+    - |
+      ls -A1 | xargs rm -rf
+      if [ $CI_PIPELINE_SOURCE == 'merge_request_event' ]; then
+        git clone --branch $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME --sparse --no-checkout --depth 1 $CI_REPOSITORY_URL ./;
+      else
+        git clone --branch $CI_COMMIT_BRANCH --sparse --no-checkout --depth 1 $CI_REPOSITORY_URL ./;
+      fi;
+      git sparse-checkout set --no-cone "$GIT_SPARSE_FILTER"
+      git -c advice.detachedHead=false checkout $([ ! -z $GIT_REF ] && printf "$GIT_REF" || printf "$CI_COMMIT_SHA")
+      la -la
+
+  #checkout a specific git reference (needs variable GIT_REF: commit|branch|tag to be set in the calling job)
+  custom-checkout:
+    - if [ ! -z "$GIT_REF" ]; then
+        echo "Checking out specific git reference $GIT_REF...";
+        git fetch --unshallow;
+        git checkout $GIT_REF;
+      fi;
+
+  #sets the git properties for user pipeline-user
+  set-git-properties:
+    - |
+      echo "Setting up git properties..."
+      git config user.name "pipeline-user"
+      git config user.email "pipeline-user@users.noreply.git.streamboard.tv"
+
+  #runs oscam make/cmake test builds (needs variable ARCH: native|aarch64|armv7|mips32el|powerpc|sh4|android12 to be set in the calling job)
+  oscam-build:
+    - | #autodetect build options
+      export LC_ALL=C
+      unset CFLAGS MAKE_OPT CMAKE_OPT BIN_EXT
+      DISABLE_OPT="WITH_NEUTRINO"
+      if [ "$ARCH" == "native" ]; then
+        echo "List some debug information...";
+        openssl version;
+        if [ -z "$(find -L "/usr/include" -name "aes.h" -type f -print -quit)" ]; then
+            DISABLE_OPT+=" WITH_SSL";
+        else
+            echo "Enabling SSL...";
+            BIN_EXT+="-ssl";
+        fi
+        if [ -z "$(find "/usr/lib" -name "arm_neon.h" -type f -print -quit)" ]; then
+            DISABLE_OPT+=" WITH_ARM_NEON";
+            CMAKE_OPT="-DWITH_ARM_NEON=0";
+        else
+            echo "Enabling ARM_NEON...";
+            CMAKE_OPT="-DWITH_ARM_NEON=1";
+            BIN_EXT+="-neon";
+        fi;
+        if ! ls -la /usr/lib/libdvbcsa.* 2>/dev/null; then
+            if ! ls -la /usr/local/lib/libdvbcsa.* 2>/dev/null; then
+                DISABLE_OPT+=" MODULE_STREAMRELAY";
+            else
+                echo "Enabling LIBDVBCSA...";
+                CMAKE_OPT+=" -DHAVE_LIBDVBCSA=1";
+                BIN_EXT+="-libdvbcsa";
+            fi;
+        else
+            echo "Enabling LIBDVBCSA...";
+            CMAKE_OPT+=" -DHAVE_LIBDVBCSA=1";
+            BIN_EXT+="-libdvbcsa";
+        fi;
+        echo "Enabling UPX COMPRESSION...";
+        MAKE_OPT+=" USE_COMPRESS=1 COMP_LEVEL=--ultra-brute";
+        CMAKE_OPT+=" -DUSE_COMPRESS=1 -DCOMP_LEVEL=--ultra-brute";
+        BIN_EXT+="-upx";
+      else
+        [ "$REMOVE_TOOLCHAIN" == "True" ] && rm -rf $HOME/toolchains/${ARCH}_generic 2>/dev/null || true;
+        mkdir $HOME/toolchains $HOME/toolchains/${ARCH}_generic 2>/dev/null || true;
+        if [ ! -f $HOME/toolchains/${ARCH}_generic/download.ok ]; then
+            echo "Downloading cross toolchain Toolchain-${ARCH}_generic.tar.xz to '$HOME/toolchains/${ARCH}_generic'...";
+            curl --progress-bar -L "https://simplebuild.dedyn.io/toolchains/gitlab/Toolchain-${ARCH}_generic.tar.xz" | tar -xJ -C $HOME/toolchains/${ARCH}_generic;
+            touch $HOME/toolchains/${ARCH}_generic/download.ok;
+        fi;
+        if [ "$ARCH" == "android12" ]; then
+            DISABLE_OPT+=" CLOCKFIX";
+            CFLAGS="-march=armv7-a -mtune=cortex-a9 -mfloat-abi=softfp -mfpu=vfpv3-d16 -U__ANDROID_API__ -DANDROID -D__ANDROID_API__=31 -fpic -fno-addrsig -funwind-tables -fstack-protector-strong -no-canonical-prefixes -Wno-invalid-command-line-argument -Wno-unused-command-line-argument -Wno-ignored-optimization-argument";
+            MAKE_OPT+=" LIB_RT= LIB_PTHREAD=";
+        fi;
+        if [ -z "$(find -L "$HOME/toolchains/${ARCH}_generic" -name "aes.h" -type f -print -quit)" ]; then
+            DISABLE_OPT+=" WITH_SSL";
+            CMAKE_OPT+=" -DUSE_SSL=0";
+        else
+            echo "Enabling SSL...";
+            MAKE_OPT+=" USE_SSL=1";
+            CMAKE_OPT+=" -DUSE_SSL=1";
+            BIN_EXT+="-ssl";
+        fi;
+        if [ -z "$(find -L "$HOME/toolchains/${ARCH}_generic" -name "arm_neon.h" -type f -print -quit)" ] || [ "$ARCH" == "ancient" ]; then
+            DISABLE_OPT+=" WITH_ARM_NEON";
+            CMAKE_OPT="-DWITH_ARM_NEON=0";
+        else
+            echo "Enabling ARM_NEON...";
+            CMAKE_OPT="-DWITH_ARM_NEON=1";
+            BIN_EXT+="-neon";
+        fi;
+        if [ -z "$(find -L "$HOME/toolchains/${ARCH}_generic" -name "dvbcsa.h" -type f -print -quit)" ]; then
+            DISABLE_OPT+=" MODULE_STREAMRELAY";
+            CMAKE_OPT+=" -DHAVE_LIBDVBCSA=0";
+        else
+            echo "Enabling LIBDVBCSA...";
+            MAKE_OPT+=" USE_LIBDVBCSA=1";
+            CMAKE_OPT+=" -DHAVE_LIBDVBCSA=1";
+            BIN_EXT+="-libdvbcsa";
+        fi;
+        if [ -z "$(find -L "$HOME/toolchains/${ARCH}_generic" -name "libusb.h" -type f -print -quit)" ]; then
+            DISABLE_OPT+=" WITH_LIBUSB";
+            CMAKE_OPT+=" -DHAVE_LIBUSB=0";
+        else
+            echo "Enabling LIBUSB...";
+            MAKE_OPT+=" USE_LIBUSB=1$([ "$ARCH" == "android12" ] && printf ' LIBUSB_LIB=-lusb-1.0' || printf '')";
+            CMAKE_OPT+=" -DHAVE_LIBUSB=1";
+            BIN_EXT+="-libusb";
+        fi;
+        if [ -z "$(find -L "$HOME/toolchains/${ARCH}_generic" -name "pcsclite.h" -type f -print -quit)" ]; then
+            DISABLE_OPT+=" WITH_PCSC";
+            CMAKE_OPT+=" -DHAVE_PCSC=0";
+        else
+            echo "Enabling PCSC...";
+            MAKE_OPT+=" USE_PCSC=1";
+            CMAKE_OPT+=" -DHAVE_PCSC=1";
+            BIN_EXT+="-pcsc";
+        fi;
+
+        MAKE_OPT+=" CROSS=$(find -L "$HOME/toolchains/${ARCH}_generic/bin" -name "*-gcc" -type f -print -quit | sed 's/.\{3\}$//')";
+        echo -e "SET(CMAKE_FIND_ROOT_PATH $HOME/toolchains/${ARCH}_generic/)\nSET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)\nSET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)\n\
+        SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)\nSET(OSCAM_SYSTEM_NAME Tuxbox)\nSET(CMAKE_SYSTEM_NAME Linux)\n\
+        SET(CMAKE_C_COMPILER $(find -L "$HOME/toolchains/${ARCH}_generic/bin" -name "*-gcc" -type f -print -quit))\n\
+        SET(CMAKE_CXX_COMPILER $(find -L "$HOME/toolchains/${ARCH}_generic/bin" -name "*-g++" -type f -print -quit))\nSET(CMAKE_SYSTEM_PROCESSOR ${ARCH})" > $HOME/toolchains/${ARCH}_generic/${ARCH}.cmake;
+        CMAKE_OPT+=" -DCMAKE_TOOLCHAIN_FILE=$HOME/toolchains/${ARCH}_generic/${ARCH}.cmake";
+      fi;
+    - !reference [.helper, upx-installer]
+    - | #make build
+      PATH="$HOME/bin:$PATH"
+      [ ! -d build/${ARCH} ] && mkdir -p build/${ARCH}
+      ./config.sh --enable all --disable $DISABLE_OPT |& tee build/${ARCH}/oscam-make-${ARCH}${BIN_EXT}.log
+      [ "$ARCH" == "ancient" ] && ./config.sh --create-cert rsa 4096 ca "Test's OSCam Distribution" |& tee -a build/${ARCH}/oscam-make-${ARCH}${BIN_EXT}.log
+      make OSCAM_BIN=build/${ARCH}/oscam-make-${ARCH}${BIN_EXT} "EXTRA_CFLAGS=$CFLAGS" $MAKE_OPT |& tee -a build/${ARCH}/oscam-make-${ARCH}${BIN_EXT}.log
+      rm -f build/${ARCH}/oscam-make-${ARCH}${BIN_EXT}.debug 2>/dev/null
+    - | #cmake build
+      PATH="$HOME/bin:$PATH"
+      [ ! -d build/${ARCH} ] && mkdir -p build/${ARCH}; cd build/${ARCH}
+      if [ "$ARCH" == "android12" ]; then
+        echo "skipped" > oscam-cmake-${ARCH}${BIN_EXT}.log;
+        echo "Skipping cmake build for $ARCH!";
+      else
+          ../../config.sh --enable all --disable $DISABLE_OPT |& tee oscam-cmake-${ARCH}${BIN_EXT}.log
+          cmake $CMAKE_OPT ../.. |& tee -a oscam-cmake-${ARCH}${BIN_EXT}.log
+          make |& tee -a oscam-cmake-${ARCH}${BIN_EXT}.log
+          [ -f oscam ] && mv oscam oscam-cmake-${ARCH}${BIN_EXT}
+          [ -f oscam-upx ] && mv oscam-upx oscam-cmake-${ARCH}${BIN_EXT}
+      fi;
+      cd ../..
+    - !reference [.helper, terminal-color]
+    - | #evaluate build
+      if grep -ciq 'warning:' build/${ARCH}/oscam-make-${ARCH}${BIN_EXT}.log build/${ARCH}/oscam-cmake-${ARCH}${BIN_EXT}.log; then
+        echo -e "${TC_FNT_MAGENTA}Please check your commit, build warnings occurred!${TC_FNT_DEFAULT}";
+        exit 1;
+      fi;
+
+  #runs a simple oscam startup test (needs variables OSCAM_BUILD: make|cmake and ARCH: native|aarch64|armv7|mips32el|powerpc|sh4|android12 to be set in the calling job)
+  oscam-startup-test:
+    - !reference [.helper, download-secure-files-installer]
+    - !reference [.helper, terminal-color]
+    - |
+      OSCAM_BIN="$(find "build/${ARCH}/" ! -name '*.log' -name "oscam-${OSCAM_BUILD}-${ARCH}*" -type f -print -quit)"
+      $OSCAM_BIN --help | head -n 12 | tee ${OSCAM_BIN}-test.log
+      timeout 5 $OSCAM_BIN --config-dir .secure_files/ --temp-dir ./build/${ARCH}/ | tee -a ${OSCAM_BIN}-test.log || true
+    - | #evaluate startup
+      if [[ $(grep -ci 'error:' ${OSCAM_BIN}-test.log) -gt 1 ]]; then
+        echo -e "${TC_FNT_RED}Please check your commit, startup errors occurred!${TC_FNT_DEFAULT}";
+        exit 1;
+      fi;
+
+  #fix trailing white and convert dos2unix
+  fix-whitespaces:
+    - !reference [.helper, set-git-properties]
+    - !reference [.helper, terminal-color]
+    - |
+      export LC_ALL=C
+      echo "Fixing trailing whitespaces automation process..."
+      if git grep -I -n -l '[[:space:]]$' | xargs sed -i 's/[[:space:]]*$//' 2>/dev/null; then
+        echo "Fixing trailing whitespaces...";
+        git status --verbose;
+        if git commit -am "Fix trailing whitespaces"; then
+            if [ $CI_PIPELINE_SOURCE == 'merge_request_event' ]; then
+                git push "${API_PROTOCOL}://pipeline-user:${GIT_PUSH_TOKEN}@${CI_REPOSITORY_URL#*@}" HEAD:$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME;
+            else
+                git push "${API_PROTOCOL}://pipeline-user:${GIT_PUSH_TOKEN}@${CI_REPOSITORY_URL#*@}" HEAD:$CI_COMMIT_BRANCH;
+            fi;
+            echo -e "${TC_FNT_MAGENTA}Trailing whitespaces found!\nPlease check the additional commit!${TC_FNT_DEFAULT}";
+            exit 1;
+        fi;
+      else
+        echo -e "${TC_FNT_GREEN}No trailing whitespaces found.${TC_FNT_DEFAULT}";
+      fi;
+      echo "Fixing trailing whitespaces automation complete."
+
+  #tag last commit with revision number and update CS_VERSION variable in globals.h
+  tag-version:
+    - |
+      export LC_ALL=C
+      echo "Versioning automation process..."
+      echo "List some debug information..."
+      git status --verbose || true
+
+    - !reference [.helper, jq-installer]
+
+    - |
+      echo "Calculating new TAG and VERSION values..."
+      TAG_API_URL="${API_PROTOCOL}:${CI_API_V4_URL#*:}/projects/$CI_PROJECT_ID/repository/tags"
+      curr_tag="$(curl --silent "${TAG_API_URL}?order_by=version&sort=desc" | $JQ_BIN -r '.[0].name,.[0].commit.id')"
+      curr_tag_rev="$(echo $curr_tag | awk '{print $1}')"
+      curr_tag_sha="$(echo $curr_tag | awk '{print $2}')"
+      if [ $(git ls-remote --heads --tags origin | grep -ci ${curr_tag_sha}) -eq 0 ]; then
+        echo "Removing unreferenced TAG $curr_tag_rev due to forced push...";
+        curl --request DELETE \
+             --header "PRIVATE-TOKEN: ${GIT_PUSH_TOKEN}" \
+             --url "${TAG_API_URL}/${curr_tag_rev}"
+        new_tag_rev=$curr_tag_rev
+      else
+        new_tag_rev=$(($curr_tag_rev + 1))
+      fi;
+      new_ver="$(date +%y.%m)-$new_tag_rev"
+      echo "New TAG: $new_tag_rev"
+      echo "New VERSION: $new_ver"
+
+    - !reference [.helper, set-git-properties]
+
+    - |
+      echo "Updating VERSION information in globals.h..."
+      sed -i "/^#define CS_VERSION/s/\.[0-9].*\"/.$new_ver\"/" globals.h
+      git diff globals.h
+      git add globals.h
+      git commit --amend --no-edit
+      sha=$(git rev-parse HEAD)
+
+    - |
+      if [ "$(curl --silent "${TAG_API_URL}/${new_tag_rev}" | $JQ_BIN -r '.name')" == "$new_tag_rev" ]; then
+        echo "Removing existing TAG $new_tag_rev...";
+        curl --request DELETE \
+             --header "PRIVATE-TOKEN: ${GIT_PUSH_TOKEN}" \
+             --url "${TAG_API_URL}/${new_tag_rev}"
+      fi;
+
+    - |
+      echo "Creating new tag:$new_tag_rev on sha:$sha..."
+      git tag --annotate "$new_tag_rev" -m "Revision $new_tag_rev" "$sha"
+
+    - |
+      echo "Pushing changes (forced) to repository..."
+      git push --force --follow-tags "${API_PROTOCOL}://pipeline-user:${GIT_PUSH_TOKEN}@${CI_REPOSITORY_URL#*@}" HEAD:$CI_COMMIT_BRANCH
+      echo "Versioning automation complete."
+
+  #rebase open merge requests
+  rebase-mrs:
+    - |
+      export LC_ALL=C
+      echo "Rebasing all open merge requests..."
+
+    - !reference [.helper, jq-installer]
+
+    - |
+      TAG_API_URL="${API_PROTOCOL}:${CI_API_V4_URL#*:}/projects/$CI_PROJECT_ID/merge_requests"
+      for iid in $(curl --silent "${TAG_API_URL}?state=opened" | $JQ_BIN '.[] | .iid'); do
+        printf "${TC_FNT_BLUE}MR"'!'"${iid} -> ${TC_FNT_GREEN}"
+        curl --silent \
+             --request PUT \
+             --header "PRIVATE-TOKEN: ${GIT_PUSH_TOKEN}" \
+             --url "${TAG_API_URL}/${iid}/rebase"
+        echo -e "${TC_FNT_DEFAULT}"
+      done
+
+  #invoke worklow on external repositories via e.g. github api
+  invoke-api:
+    - |
+      export LC_ALL=C
+      echo "Invoking github api..."
+      #curl --silent \
+      #     --request POST \
+      #     --header "Accept: application/vnd.github.everest-preview+json" \
+      #     --header "Authorization: token $(echo "${GITHUB_WORKFLOW_TOKEN}" | openssl aes-256-cbc -a -A -d -salt -pbkdf2 -k "${GIT_PUSH_TOKEN}")" \
+      #     --data '{"event_type": "some-defined-endpoint"}' \
+      #     --url "https://api.github.com/repos/some-org-or-user/some-repository/dispatches"
