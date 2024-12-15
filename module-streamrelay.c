@@ -8,11 +8,12 @@
 #include <dlfcn.h>
 #endif
 #include "module-streamrelay.h"
+#include "oscam-chk.h"
+#include "oscam-client.h"
 #include "oscam-config.h"
 #include "oscam-net.h"
 #include "oscam-string.h"
 #include "oscam-time.h"
-#include "oscam-chk.h"
 
 #define STREAM_UNDEFINED 0x00
 #define STREAM_VIDEO     0x01
@@ -793,6 +794,14 @@ static void *stream_client_handler(void *arg)
 
 	struct dvbcsa_bs_batch_s *tsbbatch;
 
+	struct s_client *cl = create_client(get_null_ip());
+	if(cl)
+	{
+		SAFE_SETSPECIFIC(getclient, cl);
+		cl->typ = 'c';
+	}
+	set_thread_name(__func__);
+
 	cs_log("Stream client %i connected", conndata->connid);
 
 	if (!cs_malloc(&http_buf, 1024))
@@ -1058,7 +1067,7 @@ static void *stream_client_handler(void *arg)
 	return NULL;
 }
 
-void *stream_server(void *UNUSED(a))
+static void *stream_server(void *cl)
 {
 #ifdef IPV6SUPPORT
 	struct sockaddr_in6 servaddr, cliaddr;
@@ -1069,6 +1078,9 @@ void *stream_server(void *UNUSED(a))
 	int32_t connfd, reuse = 1, i;
 	int8_t connaccepted;
 	stream_client_conn_data *conndata;
+
+	SAFE_SETSPECIFIC(getclient, cl);
+	set_thread_name(__func__);
 
 	cluster_size = dvbcsa_bs_batch_size();
 	has_dvbcsa_ecm = (DVBCSA_HEADER_ECM);
@@ -1245,8 +1257,11 @@ void init_stream_server(void)
 			b64encode(authtmp, cs_strlen(authtmp), &stream_source_auth);
 		}
 
-		start_thread("stream_server", stream_server, NULL, NULL, 1, 1);
-		cs_log("Stream Relay server initialized");
+		struct s_client *cl = cur_client();
+		if (start_thread("stream_server", stream_server, (void *)cl, NULL, 1, 1) == 0)
+		{
+			cs_log("Stream Relay server initialized");
+		}
 	}
 }
 

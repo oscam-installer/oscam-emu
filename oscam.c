@@ -1854,9 +1854,6 @@ int32_t main(int32_t argc, char *argv[])
 
 	init_sidtab();
 	init_readerdb();
-#ifdef MODULE_STREAMRELAY
-	init_stream_server();
-#endif
 	cfg.account = init_userdb();
 	init_signal();
 	init_provid();
@@ -1882,6 +1879,10 @@ int32_t main(int32_t argc, char *argv[])
 
 #ifdef MODULE_SERIAL
 	twin_read();
+#endif
+
+#ifdef MODULE_STREAMRELAY
+	init_stream_server();
 #endif
 
 	for(i = 0; i < CS_MAX_MOD; i++)

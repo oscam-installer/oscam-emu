@@ -60,7 +60,6 @@ typedef struct
 	uint8_t ecm_md5[MD5_DIGEST_LENGTH];
 } stream_client_data;
 
-void *stream_server(void *a);
 void init_stream_server(void);
 void stop_stream_server(void);
 
