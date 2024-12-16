@@ -2029,7 +2029,6 @@ void init_stream_server(void)
 		{
 			cs_log("Stream Relay server initialized");
 		}
-
 	}
 }
 
