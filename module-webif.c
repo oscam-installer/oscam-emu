@@ -639,6 +639,7 @@ static char *send_oscam_config_global(struct templatevars *vars, struct uriparam
 
 	tpl_printf(vars, TPLADD, "TMP", "NETPRIO%d", cfg.netprio);
 	tpl_addVar(vars, TPLADD, tpl_getVar(vars, "TMP"), "selected");
+
 	tpl_printf(vars, TPLADD, "PIDFILE", "%s", ESTR(cfg.pidfile));
 
 
@@ -1307,14 +1308,12 @@ static char *send_oscam_config_streamrelay(struct templatevars *vars, struct uri
 
 	tpl_printf(vars, TPLADD, "TMP", "STREAMRELAYENABLEDSELECTED%d", cfg.stream_relay_enabled);
 	tpl_addVar(vars, TPLADD, tpl_getVar(vars, "TMP"), "selected");
-
 	tpl_printf(vars, TPLADD, "STREAM_RELAY_PORT", "%d", cfg.stream_relay_port);
 	if(cfg.stream_relay_user)
 		{ tpl_printf(vars, TPLADD, "STREAM_RELAY_USER", "%s", cfg.stream_relay_user); }
 	value = mk_t_caidtab(&cfg.stream_relay_ctab);
 	tpl_addVar(vars, TPLADD, "STREAM_RELAY_CTAB", value);
 	free_mk_t(value);
-
 
 	tpl_printf(vars, TPLADD, "STREAM_SOURCE_HOST", "%s", cfg.stream_source_host);
 	tpl_addVar(vars, TPLADD, "STREAM_CLIENT_SOURCE_HOST", (cfg.stream_client_source_host == 1) ? "checked" : "");
@@ -1326,18 +1325,17 @@ static char *send_oscam_config_streamrelay(struct templatevars *vars, struct uri
 
 	tpl_printf(vars, TPLADD, "STREAM_RELAY_BUFFER_TIME", "%d", cfg.stream_relay_buffer_time);
 	tpl_printf(vars, TPLADD, "STREAM_RELAY_RECONNECT_COUNT", "%d", cfg.stream_relay_reconnect_count);
+#ifdef WITH_EMU
+	tpl_printf(vars, TPLADD, "TMP", "STREAMEMMENABLEDSELECTED%d", cfg.emu_stream_emm_enabled);
+	tpl_addVar(vars, TPLADD, tpl_getVar(vars, "TMP"), "selected");
+	tpl_printf(vars, TPLADD, "STREAM_ECM_DELAY", "%d", cfg.emu_stream_ecm_delay);
+#endif
 
 	tpl_printf(vars, TPLADD, "TMP", "STREAMCONFIGCLIENTSELECTED%d", cfg.stream_display_client);
 	tpl_addVar(vars, TPLADD, tpl_getVar(vars, "TMP"), "selected");
 	tpl_addVar(vars, TPLADD, "STREAM_REUSE_CLIENT", (cfg.stream_reuse_client == 1) ? "checked" : "");
 #ifdef WEBIF
 	tpl_addVar(vars, TPLADD, "STREAM_HIDE_CLIENT", (cfg.stream_hide_client == 1) ? "checked" : "");
-#endif
-
-#ifdef WITH_EMU
-	tpl_printf(vars, TPLADD, "TMP", "STREAMEMMENABLEDSELECTED%d", cfg.emu_stream_emm_enabled);
-	tpl_addVar(vars, TPLADD, tpl_getVar(vars, "TMP"), "selected");
-	tpl_printf(vars, TPLADD, "STREAM_ECM_DELAY", "%d", cfg.emu_stream_ecm_delay);
 #endif
 
 	return tpl_getTpl(vars, "CONFIGSTREAMRELAY");

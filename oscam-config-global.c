@@ -946,7 +946,6 @@ static const struct config_list streamrelay_opts[] =
 #ifdef WEBIF
 	DEF_OPT_INT8("stream_hide_client"            , OFS(stream_hide_client),           0),
 #endif
-
 	DEF_LAST_OPT
 };
 #else

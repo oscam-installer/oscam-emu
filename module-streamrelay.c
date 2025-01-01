@@ -36,8 +36,8 @@ typedef struct
 	char stream_host[256];
 } stream_client_conn_data;
 
-static char *stream_source_auth = NULL;
-static uint32_t cluster_size = 50;
+char *stream_source_auth = NULL;
+uint32_t cluster_size = 50;
 bool has_dvbcsa_ecm = 0, is_dvbcsa_static = 1;
 
 static uint8_t stream_server_mutex_init = 0;
@@ -45,14 +45,14 @@ static pthread_mutex_t stream_server_mutex;
 static int32_t glistenfd, mod_idx, gconncount = 0, gconnfd[STREAM_SERVER_MAX_CONNECTIONS], stream_resptime[STREAM_SERVER_MAX_CONNECTIONS];
 static char ecm_src[STREAM_SERVER_MAX_CONNECTIONS][9];
 static IN_ADDR_T client_ip[STREAM_SERVER_MAX_CONNECTIONS], stream_host_ip[STREAM_SERVER_MAX_CONNECTIONS];
-static in_port_t client_port[STREAM_SERVER_MAX_CONNECTIONS];
-struct s_client *streamrelay_client[STREAM_SERVER_MAX_CONNECTIONS];
-
 #ifdef WITH_EMU
 #define STATIC /* none */
 #else
 #define STATIC static
 #endif
+static in_port_t client_port[STREAM_SERVER_MAX_CONNECTIONS];
+struct s_client *streamrelay_client[STREAM_SERVER_MAX_CONNECTIONS];
+
 STATIC pthread_mutex_t fixed_key_srvid_mutex;
 STATIC uint16_t stream_cur_srvid[STREAM_SERVER_MAX_CONNECTIONS];
 STATIC stream_client_key_data key_data[STREAM_SERVER_MAX_CONNECTIONS];
@@ -186,10 +186,10 @@ void ParseEcmData(stream_client_data *cdata)
 #ifdef MODULE_RADEGAST
 	else
 	{
-	cs_strncpy(ecm_src[cdata->connid], "radegast", sizeof(ecm_src[cdata->connid]));
-	radegast_client_ecm(cdata);
-}
-#endif // MODULE_RADEGAST
+		cs_strncpy(ecm_src[cdata->connid], "radegast", sizeof(ecm_src[cdata->connid]));
+		radegast_client_ecm(cdata);
+	}
+#endif
 }
 #else
 #define ParseEcmData radegast_client_ecm
@@ -1513,7 +1513,7 @@ static void stream_client_disconnect(stream_client_conn_data *conndata)
 
 	shutdown(conndata->connfd, 2);
 	close(conndata->connfd);
-	
+
 	cs_log("Stream client %i disconnected. ip=%s port=%d", conndata->connid, cs_inet_ntoa(client_ip[conndata->connid]), client_port[conndata->connid]);
 
 	if(streamrelay_client[conndata->connid] && !cfg.stream_reuse_client && !streamrelay_client[conndata->connid]->kill_started)
@@ -1521,7 +1521,7 @@ static void stream_client_disconnect(stream_client_conn_data *conndata)
 		cs_disconnect_client(streamrelay_client[conndata->connid]);
 		free_client(streamrelay_client[conndata->connid]);
 	}
-	
+
 	NULLFREE(conndata);
 }
 
@@ -1590,8 +1590,8 @@ static void *stream_client_handler(void *arg)
 	uint16_t packetCount = 0, packetSize = 0, startOffset = 0;
 	uint32_t remainingDataPos, remainingDataLength, tmp_pids[4];
 	uint8_t descrambling = 0;
-	struct timeb start, end;
 
+	struct timeb start, end;
 #ifdef WITH_EMU
 	int32_t cur_dvb_buffer_size, cur_dvb_buffer_wait;
 #else
@@ -1779,13 +1779,6 @@ static void *stream_client_handler(void *arg)
 				&& (streamConnectErrorCount < 3 || streamDataErrorCount < 15))
 #endif
 		{
-			if(!streamrelay_client[conndata->connid] || streamrelay_client[conndata->connid]->kill)
-			{
-				clientStatus = -1;
-				break;
-			}
-
-			cs_ftime(&start);
 #ifdef WITH_EMU
 			if (data->key.csa_used)
 			{
@@ -1798,15 +1791,22 @@ static void *stream_client_handler(void *arg)
 				cur_dvb_buffer_wait = EMU_DVB_BUFFER_WAIT_DES;
 			}
 #endif
+			if(!streamrelay_client[conndata->connid] || streamrelay_client[conndata->connid]->kill)
+			{
+				clientStatus = -1;
+				break;
+			}
+
+			cs_ftime(&start);
 			streamStatus = recv(streamfd, stream_buf + bytesRead, cur_dvb_buffer_size - bytesRead, MSG_WAITALL);
 			if (streamStatus == 0) // socket closed
 			{
 				cs_log_dbg(D_CLIENT, "STATUS: streamStatus=%i, streamfd=%i, last_streamfd=%i, streamConnectErrorCount=%i, streamDataErrorCount=%i, bytesRead=%i",
-								streamStatus, streamfd, last_streamfd, streamConnectErrorCount, streamDataErrorCount, bytesRead);
+						streamStatus, streamfd, last_streamfd, streamConnectErrorCount, streamDataErrorCount, bytesRead);
 				if(streamfd == last_streamfd)
 				{
-						cs_log("WARNING: stream client %i - stream source closed connection.", conndata->connid);
-						if(cfg.stream_client_source_host && conndata->stream_host != cfg.stream_source_host && streamDataErrorCount > 0)
+					cs_log("WARNING: stream client %i - stream source closed connection.", conndata->connid);
+					if(cfg.stream_client_source_host && conndata->stream_host != cfg.stream_source_host && streamDataErrorCount > 0)
 					{
 						cs_strncpy(conndata->stream_host, cfg.stream_source_host, sizeof(conndata->stream_host));
 						cs_log("FALLBACK: stream client %i - try using stream source host from config. host=%s", conndata->connid, conndata->stream_host);
@@ -1851,6 +1851,7 @@ static void *stream_client_handler(void *arg)
 					sscanf((const char*)stream_buf, "HTTP/%3s %d ", http_version , &http_status_code) == 2 &&
 					http_status_code != 200)
 				{
+					cs_log_dbg(D_CLIENT, "HTTP (recv) (%i): %s", streamStatus, remove_newline_chars((const char*)stream_buf));
 					cs_log("ERROR: stream client %i got %d response from stream source!", conndata->connid, http_status_code);
 					streamConnectErrorCount++;
 					cs_sleepms(100);
@@ -1858,7 +1859,6 @@ static void *stream_client_handler(void *arg)
 				}
 				else
 				{
-					cs_log_dbg(D_CLIENT, "HTTP (recv) (%i): %s", streamStatus, remove_newline_chars((const char*)stream_buf));
 					cs_log_dbg(0, "WARNING: stream client %i non-full buffer from stream source.", conndata->connid);
 					streamDataErrorCount++;
 					cs_sleepms(100);
@@ -1993,6 +1993,7 @@ static void *stream_server(void)
 
 	cluster_size = dvbcsa_bs_batch_size();
 	has_dvbcsa_ecm = (DVBCSA_HEADER_ECM);
+
 #if !DVBCSA_KEY_ECM
 #pragma message "WARNING: Streamrelay is compiled without dvbcsa ecm headers! ECM processing via Streamrelay will not work!"
 #endif
@@ -2148,13 +2149,15 @@ void *streamrelay_handler(struct s_client *UNUSED(cl), uint8_t *UNUSED(mbuf), in
 			snprintf(authtmp, sizeof(authtmp), "%s:%s", cfg.stream_source_auth_user, cfg.stream_source_auth_password);
 			b64encode(authtmp, cs_strlen(authtmp), &stream_source_auth);
 		}
+
 #ifdef WITH_EMU
 		emu_stream_emm_enabled = cfg.emu_stream_emm_enabled;
 #endif
+
 		mod_idx = module_idx;
 		start_thread("stream_server", stream_server, NULL, NULL, 1, 1);
 	}
-	return NULL;	
+	return NULL;
 }
 
 #if WITH_EMU
@@ -2251,9 +2254,9 @@ void stop_stream_server(void)
 #endif
 
 	shutdown(glistenfd, 2);
+	close(glistenfd);
 
 	NULLFREE(stream_source_auth);
-	close(glistenfd);
 }
 
 /*
