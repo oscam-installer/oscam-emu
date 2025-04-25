@@ -1,4 +1,4 @@
-OSCam EMU 11880-802
+OSCam EMU 11881-802
 =======
 
 OSCam: Open Source Conditional Access Module
@@ -9,7 +9,7 @@ License
 =======
 
 OSCam: Open Source CAM
-Copyright (C) 2009-2024 OSCam developers
+Copyright (C) 2009-2025 OSCam developers
 
 OSCam is based on the Streamboard mp-cardserver 0.9d by dukat and
 has been extended and worked on by many more since then.
