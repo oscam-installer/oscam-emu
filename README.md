@@ -1,4 +1,4 @@
-OSCam EMU 11885-802
+OSCam EMU 11886-802
 =======
 
 OSCam: Open Source Conditional Access Module
