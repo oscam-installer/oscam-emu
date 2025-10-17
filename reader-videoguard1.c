@@ -268,11 +268,13 @@ static int32_t videoguard1_card_init(struct s_reader *reader, ATR *newatr)
 		}
 		// rdr_log(reader, "config BoxID: %02X%02X%02X%02X", boxID[0], boxID[1], boxID[2], boxID[3]);
 	}
-
-	if(!boxidOK)
+	else
 	{
-		rdr_log(reader, "no boxID available");
-		return ERROR;
+		if(!boxidOK)
+		{
+			rdr_log(reader, "no boxID available");
+			return ERROR;
+		}
 	}
 
 	// Send BoxID
