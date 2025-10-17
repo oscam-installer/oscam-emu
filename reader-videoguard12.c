@@ -162,7 +162,6 @@ static int32_t videoguard12_card_init(struct s_reader *reader, ATR *newatr)
 		{
 			boxID[i] = (reader->boxid >> (8 * (3 - i))) % 0x100;
 		}
-		rdr_log_dbg(reader, D_READER, "oscam.server BoxID: %02X%02X%02X%02X", boxID[0], boxID[1], boxID[2], boxID[3]);
 	}
 	else
 	{
@@ -176,6 +175,7 @@ static int32_t videoguard12_card_init(struct s_reader *reader, ATR *newatr)
 		if(!write_cmd_vg(ins38,NULL) || !status_ok(cta_res + cta_lr - 2))
 		{
 			rdr_log(reader, "class48 ins38: failed");
+			return ERROR;
 		}
 		else
 		{
@@ -211,52 +211,52 @@ static int32_t videoguard12_card_init(struct s_reader *reader, ATR *newatr)
 					switch (cta_res[i])
 					{   // object length vary depending on type
 						case 0x00:        // padding
-							{
-								i += 1;
-								break;
-							}
+						{
+							i += 1;
+							break;
+						}
 						case 0xEF:        // card status
-							{
-								i += 3;
-								break;
-							}
+						{
+							i += 3;
+							break;
+						}
 						case 0xD1:
-							{
-								i += 4;
-								break;
-							}
+						{
+							i += 4;
+							break;
+						}
 						case 0xDF:        // next server contact
-							{
-								i += 5;
-								break;
-							}
+						{
+							i += 5;
+							break;
+						}
 						case 0xF3:        // boxID
-							{
-								memcpy(&boxID, &cta_res[i + 1], sizeof(boxID));
-								boxidOK = 1;
-								i += 5;
-								break;
-							}
+						{
+							memcpy(&boxID, &cta_res[i + 1], sizeof(boxID));
+							boxidOK = 1;
+							i += 5;
+							break;
+						}
 						case 0xF6:
-							{
-								i += 6;
-								break;
-							}
+						{
+							i += 6;
+							break;
+						}
 						case 0xFC:        // No idea NDS1/NDS12
-							{
-								i += 14;
-								break;
-							}
+						{
+							i += 14;
+							break;
+						}
 						case 0x01:        // date & time
-							{
-								i += 7;
-								break;
-							}
+						{
+							i += 7;
+							break;
+						}
 						case 0xFA:
-							{
-								i += 9;
-								break;
-							}
+						{
+							i += 9;
+							break;
+						}
 						case 0x5E:
 						case 0x67:        // signature
 						case 0xDE:
@@ -264,15 +264,15 @@ static int32_t videoguard12_card_init(struct s_reader *reader, ATR *newatr)
 						case 0xE9:        // tier dates
 						case 0xF8:        // Old PPV Event Record
 						case 0xFD:
-							{
-								i += cta_res[i + 1] + 2;  // skip length + 2 bytes (type and length)
-								break;
-							}
+						{
+							i += cta_res[i + 1] + 2;  // skip length + 2 bytes (type and length)
+							break;
+						}
 						default:      // default to assume a length byte
-							{
-								rdr_log(reader, "class48 ins36: returned unknown type=0x%02X - parsing may fail", cta_res[i]);
-								i += cta_res[i + 1] + 2;
-							}
+						{
+							rdr_log(reader, "class48 ins36: returned unknown type=0x%02X - parsing may fail", cta_res[i]);
+							i += cta_res[i + 1] + 2;
+						}
 					} //switch
 				}//else
 			}//while
@@ -350,7 +350,7 @@ static int32_t videoguard12_card_init(struct s_reader *reader, ATR *newatr)
 	rdr_log_sensitive(reader, "type: VideoGuard, caid: %04X, serial: {%02X%02X%02X%02X}, BoxID: {%02X%02X%02X%02X}",
 					reader->caid, reader->hexserial[2], reader->hexserial[3], reader->hexserial[4],
 					reader->hexserial[5], boxID[0], boxID[1], boxID[2], boxID[3]);
-	rdr_log(reader, "ready for requests - this is in testing please send -d 255 logs to rebdog");
+	rdr_log(reader, "ready for requests");
 
 	return OK;
 }
