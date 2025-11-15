@@ -1,4 +1,4 @@
-OSCam EMU 11904-802
+OSCam EMU 11905-802
 =======
 
 OSCam: Open Source Conditional Access Module
@@ -35,21 +35,21 @@ Version history
 ===============
 
 OSCam history is accessible through Trac timeline at:
-   https://git.streamboard.tv/common/oscam/-/commits/master
+   https://github.com/oscam-installer/oscam-emu/commits/master/
 
 
 Repositories
 ============
 
 GIT repository:
-   git clone https://git.streamboard.tv/common/oscam.git oscam
+   git clone https://github.com/oscam-installer/oscam-emu.git oscam
 
 
 Building OSCam from source
 ==========================
 
  - Get the lastest sources from SVN
-    git clone https://git.streamboard.tv/common/oscam.git oscam
+    git clone https://github.com/oscam-installer/oscam-emu.git oscam
 
  - Go to oscam-trunk directory.
 
@@ -67,7 +67,7 @@ Building OScam for different CPUs (cross-compilation)
 First you need to install the target CPU toolchain. Already built toolchains
 for various architectures can be downloaded from:
 
-    https://git.streamboard.tv/common/oscam/-/wikis/CrossCompiling
+    https://git.streamboard.tv/common/oscam/-/wikis/pages/installation/cross-compile
 
 In order to cross compile OSCam you need to set CROSS variable when
 running make. For example to compile for SH4 architecture you need
@@ -115,5 +115,5 @@ forum under (mainly German and English language) at:
    https://board.streamboard.tv/forum/
 
 Configuration wiki:
-   https://wiki.streamboard.tv/wiki/OSCam
+   https://git.streamboard.tv/common/oscam/-/wikis/home
 
